@@ -1,0 +1,47 @@
+[
+  {
+    "hotel_name": "The Emin Pasha Hotel & Spa",
+    "website": "https://www.eminpasha.com",
+    "room_types": "Standard Room | Deluxe Room | Executive Suite | Presidential Suite",
+    "prices": "USD 120 per night | USD 180 per night | USD 320 per night",
+    "check_in": "2:00 PM",
+    "check_out": "11:00 AM",
+    "amenities": "WiFi | Swimming Pool | Spa | Restaurant | Bar | Gym | Parking | Generator",
+    "location": "Plot 27 Akii Bua Road, Nakasero, Kampala, Uganda",
+    "phone": "+256 414 236 977",
+    "email": "gm@eminpasha.com",
+    "description": "A boutique luxury hotel in the heart of Kampala offering world-class accommodation and spa services.",
+    "status": "SUCCESS",
+    "scraped_at": "2026-07-15 10:30:22"
+  },
+  {
+    "hotel_name": "Speke Hotel Kampala",
+    "website": "https://www.spekehotel.com",
+    "room_types": "Standard Room | Superior Room | Deluxe Room | Suite",
+    "prices": "UGX 350,000 per night | UGX 450,000 per night",
+    "check_in": "12:00 PM",
+    "check_out": "10:00 AM",
+    "amenities": "WiFi | Restaurant | Bar | Conference Room | Parking | Laundry | Room Service",
+    "location": "Plot 7-9 Nile Avenue, Kampala, Uganda",
+    "phone": "+256 414 259 221",
+    "email": "spekehotel@spekehotel.com",
+    "description": "One of Kampala's most iconic hotels, located in the heart of the city centre.",
+    "status": "SUCCESS",
+    "scraped_at": "2026-07-15 10:33:45"
+  },
+  {
+    "hotel_name": "Unknown Resort",
+    "website": "https://www.unknownresort.co.ug",
+    "room_types": "Not found",
+    "prices": "Not publicly listed",
+    "check_in": "Not found",
+    "check_out": "Not found",
+    "amenities": "Not listed",
+    "location": "Uganda",
+    "phone": "Not found",
+    "email": "Not found",
+    "description": "Could not access website",
+    "status": "FAILED",
+    "scraped_at": "2026-07-15 10:35:10"
+  }
+]
