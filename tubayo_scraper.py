@@ -1,11 +1,12 @@
 """
-Tubayo Hotel Web Scraper
-========================
+Tubayo Hotel Web Scraper v2
+============================
+Upgraded with retry logic, summary report, and config integration.
 Scrapes hotel room info from Ugandan hotel websites.
-Outputs structured CSV and JSON ready for Tubayo onboarding.
+Outputs structured CSV, JSON, and a summary report ready for Tubayo onboarding.
 
 Usage:
-    python tubayo_scraper.py
+    python tubayo_scraper_v2.py
 
 Author: Lincon - Tubayo Operations Lead
 """
@@ -16,7 +17,17 @@ import csv
 import json
 import time
 import re
-from datetime import datetime
+import os
+from datetime import datetime, timedelta
+
+# ── IMPORT CONFIG ──
+try:
+    import config
+    USE_CONFIG = True
+except ImportError:
+    USE_CONFIG = False
+    print("⚠️  config.py not found — using default settings")
+
 
 # ── HEADERS (mimic real browser to avoid blocks) ──
 HEADERS = {
@@ -29,41 +40,55 @@ HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 
-# ── UGANDAN HOTEL URLS TO SCRAPE ──
-HOTEL_URLS = [
-    "https://www.eminpasha.com",
-    "https://www.spekehotel.com",
-    "https://www.fairwayhotel.co.ug",
-    "https://www.pearlofafrica.com",
-    "https://www.golfcoursehotel.co.ug",
-    "https://www.imperialhotels.co.ug",
-    "https://www.cassialore.com",
-    "https://www.affordablehotelsafrica.com",
-    "https://www.kabira.co.ug",
-    "https://www.humuraresorts.com",
-]
+# ── LOAD FROM CONFIG OR USE DEFAULTS ──
+if USE_CONFIG:
+    DELAY_BETWEEN_REQUESTS = config.DELAY_BETWEEN_REQUESTS
+    REQUEST_TIMEOUT = config.REQUEST_TIMEOUT
+    MAX_RETRIES = config.MAX_RETRIES
+    OUTPUT_FORMAT = config.OUTPUT_FORMAT
+    OUTPUT_FOLDER = config.OUTPUT_FOLDER
+    HOTEL_URLS = config.HOTEL_URLS
+    ROOM_KEYWORDS = config.ROOM_KEYWORDS
+    AMENITY_KEYWORDS = config.AMENITY_KEYWORDS
+else:
+    DELAY_BETWEEN_REQUESTS = 3
+    REQUEST_TIMEOUT = 15
+    MAX_RETRIES = 2
+    OUTPUT_FORMAT = ["csv", "json"]
+    OUTPUT_FOLDER = "output"
+    HOTEL_URLS = [
+        "https://www.eminpasha.com",
+        "https://www.spekehotel.com",
+        "https://www.fairwayhotel.co.ug",
+        "https://www.pearlofafrica.com",
+        "https://www.golfcoursehotel.co.ug",
+        "https://www.imperialhotels.co.ug",
+        "https://www.cassialore.com",
+        "https://www.affordablehotelsafrica.com",
+        "https://www.kabira.co.ug",
+        "https://www.humuraresorts.com",
+    ]
+    ROOM_KEYWORDS = [
+        'standard', 'deluxe', 'suite', 'executive', 'superior',
+        'double', 'single', 'twin', 'family', 'presidential',
+        'junior', 'penthouse', 'studio', 'apartment', 'cottage',
+        'lodge', 'villa', 'bungalow', 'chalet'
+    ]
+    AMENITY_KEYWORDS = [
+        'wifi', 'wi-fi', 'internet', 'pool', 'swimming', 'gym',
+        'fitness', 'spa', 'restaurant', 'bar', 'parking',
+        'air conditioning', 'ac', 'tv', 'television', 'breakfast',
+        'laundry', 'conference', 'meeting room', 'airport shuttle',
+        'generator', 'security', 'rooftop'
+    ]
 
-# ── KEYWORDS FOR SMART FIELD DETECTION ──
+# ── PRICE PATTERNS ──
 PRICE_PATTERNS = [
     r'UGX[\s]*[\d,]+',
     r'USD[\s]*[\d,]+',
     r'\$[\d,]+',
     r'[\d,]+[\s]*(per night|/night|a night)',
     r'from[\s]*[\d,]+',
-]
-
-ROOM_KEYWORDS = [
-    'standard', 'deluxe', 'suite', 'executive', 'superior',
-    'double', 'single', 'twin', 'family', 'presidential',
-    'junior', 'penthouse', 'studio', 'apartment', 'cottage',
-    'lodge', 'villa', 'bungalow', 'chalet'
-]
-
-AMENITY_KEYWORDS = [
-    'wifi', 'wi-fi', 'internet', 'pool', 'swimming', 'gym',
-    'fitness', 'spa', 'restaurant', 'bar', 'parking', 'air conditioning',
-    'ac', 'tv', 'television', 'breakfast', 'laundry', 'conference',
-    'meeting room', 'airport shuttle', 'generator', 'security'
 ]
 
 CHECKIN_PATTERNS = [
@@ -78,51 +103,97 @@ CHECKOUT_PATTERNS = [
 
 
 # ════════════════════════════════════════════
+# RETRY LOGIC
+# ════════════════════════════════════════════
+
+def fetch_page_with_retry(url, timeout=15, max_retries=2):
+    """
+    Fetch a webpage with exponential backoff retry logic.
+
+    Args:
+        url: The URL to fetch
+        timeout: Request timeout in seconds
+        max_retries: Number of retry attempts on failure
+
+    Returns:
+        tuple: (BeautifulSoup object or None, error message or None)
+    """
+    last_error = None
+
+    for attempt in range(max_retries + 1):
+        try:
+            response = requests.get(url, headers=HEADERS, timeout=timeout)
+            response.raise_for_status()
+            return BeautifulSoup(response.text, 'lxml'), None
+
+        except requests.exceptions.Timeout:
+            last_error = f"Timeout after {timeout}s"
+            if attempt < max_retries:
+                wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s...
+                print(f"     ⏳ Timeout on attempt {attempt + 1}/{max_retries + 1}. Retrying in {wait_time}s...")
+                time.sleep(wait_time)
+            else:
+                print(f"     ❌ Timeout: All {max_retries + 1} attempts exhausted for {url}")
+
+        except requests.exceptions.HTTPError as e:
+            status_code = e.response.status_code
+            last_error = f"HTTP {status_code}"
+            if attempt < max_retries and status_code in [429, 500, 502, 503, 504]:
+                wait_time = 2 ** attempt
+                print(f"     ⏳ HTTP {status_code} on attempt {attempt + 1}/{max_retries + 1}. Retrying in {wait_time}s...")
+                time.sleep(wait_time)
+            else:
+                print(f"     ❌ HTTP Error {status_code}: {url}")
+                break  # Don't retry 4xx client errors (except 429)
+
+        except requests.exceptions.ConnectionError:
+            last_error = "Connection failed"
+            if attempt < max_retries:
+                wait_time = 2 ** attempt
+                print(f"     ⏳ Connection failed on attempt {attempt + 1}/{max_retries + 1}. Retrying in {wait_time}s...")
+                time.sleep(wait_time)
+            else:
+                print(f"     ❌ Connection failed: All {max_retries + 1} attempts exhausted for {url}")
+
+        except Exception as e:
+            last_error = str(e)
+            if attempt < max_retries:
+                wait_time = 2 ** attempt
+                print(f"     ⏳ Error on attempt {attempt + 1}/{max_retries + 1}: {e}. Retrying in {wait_time}s...")
+                time.sleep(wait_time)
+            else:
+                print(f"     ❌ Error fetching {url}: {e}")
+
+    return None, last_error
+
+
+def fetch_page(url, timeout=15):
+    """Legacy wrapper for backward compatibility."""
+    soup, error = fetch_page_with_retry(url, timeout, MAX_RETRIES)
+    return soup
+
+
+# ════════════════════════════════════════════
 # SCRAPER FUNCTIONS
 # ════════════════════════════════════════════
 
-def fetch_page(url, timeout=15):
-    """Fetch a webpage safely with error handling."""
-    try:
-        response = requests.get(url, headers=HEADERS, timeout=timeout)
-        response.raise_for_status()
-        return BeautifulSoup(response.text, 'lxml')
-    except requests.exceptions.Timeout:
-        print(f"  ⚠ Timeout: {url}")
-        return None
-    except requests.exceptions.HTTPError as e:
-        print(f"  ⚠ HTTP Error {e.response.status_code}: {url}")
-        return None
-    except requests.exceptions.ConnectionError:
-        print(f"  ⚠ Connection failed: {url}")
-        return None
-    except Exception as e:
-        print(f"  ⚠ Error fetching {url}: {e}")
-        return None
-
-
 def extract_hotel_name(soup, url):
     """Extract hotel name from page."""
-    # Try title tag first
     if soup.title and soup.title.string:
         title = soup.title.string.strip()
-        # Clean common suffixes
         for suffix in [' | Home', ' - Home', ' | Official', ' - Official Website', ' | Uganda']:
             title = title.replace(suffix, '')
         if title:
             return title.strip()
 
-    # Try h1
     h1 = soup.find('h1')
     if h1:
         return h1.get_text(strip=True)
 
-    # Try og:site_name
     og = soup.find('meta', property='og:site_name')
     if og and og.get('content'):
         return og['content'].strip()
 
-    # Fallback to domain name
     domain = url.replace('https://', '').replace('http://', '').replace('www.', '').split('/')[0]
     return domain.split('.')[0].title()
 
@@ -132,17 +203,14 @@ def extract_room_types(soup):
     found_rooms = []
     text = soup.get_text(' ', strip=True).lower()
 
-    # Find rooms from keywords
     for keyword in ROOM_KEYWORDS:
         if keyword in text:
-            # Try to find surrounding context
             idx = text.find(keyword)
             snippet = text[max(0, idx-5):idx+30].strip()
             room_name = snippet.title()
             if room_name not in found_rooms:
                 found_rooms.append(room_name)
 
-    # Also check headings and specific elements
     for tag in ['h2', 'h3', 'h4', '.room-title', '.room-type', '.room-name']:
         elements = soup.find_all(tag) if not tag.startswith('.') else soup.select(tag)
         for el in elements:
@@ -164,7 +232,6 @@ def extract_prices(soup):
         matches = re.findall(pattern, text, re.IGNORECASE)
         prices.extend(matches)
 
-    # Deduplicate and clean
     unique_prices = list(set(p.strip() for p in prices))
     return unique_prices[:5] if unique_prices else ["Not publicly listed"]
 
@@ -204,17 +271,14 @@ def extract_amenities(soup):
 
 def extract_location(soup, url):
     """Extract hotel location/address."""
-    # Try address tags
     address = soup.find('address')
     if address:
         return address.get_text(strip=True)
 
-    # Try meta geo tags
     geo = soup.find('meta', {'name': 'geo.placename'})
     if geo and geo.get('content'):
         return geo['content']
 
-    # Search for common address patterns
     text = soup.get_text(' ', strip=True)
     patterns = [
         r'Plot[\s]+\d+[^,\n]+',
@@ -234,15 +298,12 @@ def extract_contact(soup):
     """Extract phone and email."""
     text = soup.get_text(' ', strip=True)
 
-    # Phone
     phone_pattern = r'(\+?256[\s-]?\d{3}[\s-]?\d{3}[\s-]?\d{3}|\+?0\d{9}|\d{3}[-\s]\d{3}[-\s]\d{4})'
     phones = re.findall(phone_pattern, text)
     phone = phones[0].strip() if phones else "Not found"
 
-    # Email
     email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
     emails = re.findall(email_pattern, text)
-    # Filter out common false positives
     real_emails = [e for e in emails if not any(x in e.lower() for x in ['example', 'youremail', 'email@'])]
     email = real_emails[0] if real_emails else "Not found"
 
@@ -251,17 +312,14 @@ def extract_contact(soup):
 
 def extract_description(soup):
     """Extract a brief hotel description."""
-    # Try meta description first
     meta_desc = soup.find('meta', {'name': 'description'})
     if meta_desc and meta_desc.get('content'):
         return meta_desc['content'].strip()[:300]
 
-    # Try og:description
     og_desc = soup.find('meta', property='og:description')
     if og_desc and og_desc.get('content'):
         return og_desc['content'].strip()[:300]
 
-    # Try first meaningful paragraph
     for p in soup.find_all('p'):
         text = p.get_text(strip=True)
         if len(text) > 80:
@@ -275,10 +333,11 @@ def extract_description(soup):
 # ════════════════════════════════════════════
 
 def scrape_hotel(url):
-    """Scrape all data from a single hotel URL."""
+    """Scrape all data from a single hotel URL with retry logic."""
     print(f"\n🔍 Scraping: {url}")
 
-    soup = fetch_page(url)
+    soup, error = fetch_page_with_retry(url, timeout=REQUEST_TIMEOUT, max_retries=MAX_RETRIES)
+
     if not soup:
         return {
             "hotel_name": url,
@@ -291,8 +350,9 @@ def scrape_hotel(url):
             "location": "N/A",
             "phone": "N/A",
             "email": "N/A",
-            "description": "Could not access website",
+            "description": f"Could not access website: {error}",
             "status": "FAILED",
+            "error_reason": error,
             "scraped_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
 
@@ -323,6 +383,7 @@ def scrape_hotel(url):
         "email": email,
         "description": description,
         "status": "SUCCESS",
+        "error_reason": None,
         "scraped_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
 
@@ -331,6 +392,7 @@ def save_csv(data, filename):
     """Save results to CSV."""
     if not data:
         return
+    os.makedirs(os.path.dirname(filename) or '.', exist_ok=True)
     with open(filename, 'w', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=data[0].keys())
         writer.writeheader()
@@ -340,21 +402,161 @@ def save_csv(data, filename):
 
 def save_json(data, filename):
     """Save results to JSON."""
+    os.makedirs(os.path.dirname(filename) or '.', exist_ok=True)
     with open(filename, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
     print(f"📋 JSON saved: {filename}")
 
 
-def run_scraper(urls, delay=3):
+# ════════════════════════════════════════════
+# SUMMARY REPORT
+# ════════════════════════════════════════════
+
+def generate_summary_report(results, start_time, end_time, output_folder):
     """
-    Main scraper runner.
-    delay: seconds between requests (be respectful to servers)
+    Generate a comprehensive summary report of the scraping run.
+
+    Args:
+        results: List of hotel data dictionaries
+        start_time: When scraping started
+        end_time: When scraping finished
+        output_folder: Where to save the report
+
+    Returns:
+        Dictionary containing the summary data
     """
+    total = len(results)
+    successful = [r for r in results if r['status'] == 'SUCCESS']
+    failed = [r for r in results if r['status'] == 'FAILED']
+
+    # Count fields found across successful scrapes
+    fields_found = {
+        'hotel_name': sum(1 for r in successful if r.get('hotel_name') and r['hotel_name'] != 'Not found'),
+        'room_types': sum(1 for r in successful if r.get('room_types') and r['room_types'] != 'Not found' and r['room_types'] != 'Failed to fetch'),
+        'prices': sum(1 for r in successful if r.get('prices') and r['prices'] != 'Not publicly listed' and r['prices'] != 'Failed to fetch'),
+        'check_in': sum(1 for r in successful if r.get('check_in') and r['check_in'] != 'Not found'),
+        'check_out': sum(1 for r in successful if r.get('check_out') and r['check_out'] != 'Not found'),
+        'amenities': sum(1 for r in successful if r.get('amenities') and r['amenities'] != 'Not listed' and r['amenities'] != 'Failed to fetch'),
+        'location': sum(1 for r in successful if r.get('location') and r['location'] != 'Uganda' and r['location'] != 'N/A'),
+        'phone': sum(1 for r in successful if r.get('phone') and r['phone'] != 'Not found' and r['phone'] != 'N/A'),
+        'email': sum(1 for r in successful if r.get('email') and r['email'] != 'Not found' and r['email'] != 'N/A'),
+        'description': sum(1 for r in successful if r.get('description') and r['description'] != 'No description available' and r['description'] != 'Could not access website'),
+    }
+
+    # Group failures by reason
+    failure_reasons = {}
+    for r in failed:
+        reason = r.get('error_reason', 'Unknown error')
+        failure_reasons[reason] = failure_reasons.get(reason, 0) + 1
+
+    duration = end_time - start_time
+
+    summary = {
+        "report_generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "scraping_session": {
+            "started_at": start_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "finished_at": end_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "duration_seconds": round(duration.total_seconds(), 2),
+            "duration_formatted": str(timedelta(seconds=int(duration.total_seconds()))),
+        },
+        "statistics": {
+            "total_hotels": total,
+            "successful": len(successful),
+            "failed": len(failed),
+            "success_rate_percent": round((len(successful) / total * 100), 2) if total > 0 else 0,
+        },
+        "field_coverage": {
+            field: {
+                "found": count,
+                "out_of": len(successful),
+                "coverage_percent": round((count / len(successful) * 100), 2) if successful else 0
+            }
+            for field, count in fields_found.items()
+        },
+        "failures": {
+            "count": len(failed),
+            "by_reason": failure_reasons,
+            "failed_hotels": [
+                {
+                    "url": r['website'],
+                    "error_reason": r.get('error_reason', 'Unknown')
+                }
+                for r in failed
+            ]
+        },
+        "successful_hotels": [
+            {
+                "name": r['hotel_name'],
+                "url": r['website'],
+                "rooms_found": len(r['room_types'].split(' | ')) if r.get('room_types') and r['room_types'] != 'Not found' else 0,
+                "amenities_found": len(r['amenities'].split(' | ')) if r.get('amenities') and r['amenities'] != 'Not listed' else 0,
+            }
+            for r in successful
+        ]
+    }
+
+    # Save summary as JSON
+    timestamp = end_time.strftime("%Y%m%d_%H%M%S")
+    summary_filename = os.path.join(output_folder, f"tubayo_summary_{timestamp}.json")
+    os.makedirs(output_folder, exist_ok=True)
+
+    with open(summary_filename, 'w', encoding='utf-8') as f:
+        json.dump(summary, f, indent=2, ensure_ascii=False)
+
+    # Print summary to console
+    print("\n" + "=" * 60)
+    print("  📊 SCRAPING SUMMARY REPORT")
     print("=" * 60)
-    print("  TUBAYO HOTEL WEB SCRAPER")
-    print("  Extracting hotel data for onboarding")
+    print(f"\n  ⏱️  Duration:        {summary['scraping_session']['duration_formatted']}")
+    print(f"  🏨 Total Hotels:    {total}")
+    print(f"  ✅ Successful:      {len(successful)}")
+    print(f"  ❌ Failed:          {len(failed)}")
+    print(f"  📈 Success Rate:    {summary['statistics']['success_rate_percent']}%")
+    print("\n  ── Field Coverage ──")
+    for field, stats in summary['field_coverage'].items():
+        bar = '█' * int(stats['coverage_percent'] / 10) + '░' * (10 - int(stats['coverage_percent'] / 10))
+        print(f"  {field:15} {bar} {stats['coverage_percent']}% ({stats['found']}/{stats['out_of']})")
+
+    if failed:
+        print("\n  ── Failure Breakdown ──")
+        for reason, count in failure_reasons.items():
+            print(f"  • {reason}: {count} hotel(s)")
+        print("\n  Failed URLs:")
+        for r in failed:
+            print(f"    ❌ {r['website']} — {r.get('error_reason', 'Unknown')}")
+
+    print(f"\n  📁 Summary saved: {summary_filename}")
+    print("=" * 60)
+
+    return summary
+
+
+# ════════════════════════════════════════════
+# MAIN RUNNER
+# ════════════════════════════════════════════
+
+def run_scraper(urls=None, delay=None):
+    """
+    Main scraper runner with retry logic and summary report.
+
+    Args:
+        urls: List of hotel URLs (defaults to config.HOTEL_URLS)
+        delay: Seconds between requests (defaults to config.DELAY_BETWEEN_REQUESTS)
+    """
+    urls = urls or HOTEL_URLS
+    delay = delay if delay is not None else DELAY_BETWEEN_REQUESTS
+
+    start_time = datetime.now()
+
+    print("=" * 60)
+    print("  🏨 TUBAYO HOTEL WEB SCRAPER v2")
+    print("  With Retry Logic & Summary Report")
     print("=" * 60)
     print(f"\n📋 Hotels to scrape: {len(urls)}")
+    print(f"🔁 Max retries per URL: {MAX_RETRIES}")
+    print(f"⏱️  Delay between requests: {delay}s")
+    print(f"📁 Output folder: {OUTPUT_FOLDER}")
+    print("-" * 60)
 
     results = []
 
@@ -363,33 +565,27 @@ def run_scraper(urls, delay=3):
         data = scrape_hotel(url)
         results.append(data)
 
-        # Respectful delay between requests
         if i < len(urls):
             print(f"  ⏳ Waiting {delay}s before next request...")
             time.sleep(delay)
 
+    end_time = datetime.now()
+
     # Save outputs
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    csv_file = f"tubayo_hotels_{timestamp}.csv"
-    json_file = f"tubayo_hotels_{timestamp}.json"
+    timestamp = end_time.strftime("%Y%m%d_%H%M%S")
 
-    save_csv(results, csv_file)
-    save_json(results, json_file)
+    if "csv" in OUTPUT_FORMAT:
+        csv_file = os.path.join(OUTPUT_FOLDER, f"tubayo_hotels_{timestamp}.csv")
+        save_csv(results, csv_file)
 
-    # Print summary
-    success = sum(1 for r in results if r['status'] == 'SUCCESS')
-    failed = sum(1 for r in results if r['status'] == 'FAILED')
+    if "json" in OUTPUT_FORMAT:
+        json_file = os.path.join(OUTPUT_FOLDER, f"tubayo_hotels_{timestamp}.json")
+        save_json(results, json_file)
 
-    print("\n" + "=" * 60)
-    print("  SCRAPING COMPLETE")
-    print("=" * 60)
-    print(f"  ✅ Successful: {success}")
-    print(f"  ❌ Failed:     {failed}")
-    print(f"  📁 CSV output: {csv_file}")
-    print(f"  📁 JSON output: {json_file}")
-    print("=" * 60)
+    # Generate summary report
+    summary = generate_summary_report(results, start_time, end_time, OUTPUT_FOLDER)
 
-    return results
+    return results, summary
 
 
 # ════════════════════════════════════════════
@@ -397,4 +593,4 @@ def run_scraper(urls, delay=3):
 # ════════════════════════════════════════════
 
 if __name__ == "__main__":
-    results = run_scraper(HOTEL_URLS, delay=3)
+    results, summary = run_scraper()

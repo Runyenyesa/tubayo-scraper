@@ -1,0 +1,61 @@
+name: 🏨 Tubayo Hotel Scraper
+
+on:
+  # Run on schedule (daily at 6:00 AM UTC)
+  schedule:
+    - cron: '0 6 * * *'
+
+  # Allow manual trigger from GitHub UI
+  workflow_dispatch:
+    inputs:
+      urls:
+        description: 'Comma-separated hotel URLs (optional, uses config.py if empty)'
+        required: false
+        default: ''
+      delay:
+        description: 'Delay between requests (seconds)'
+        required: false
+        default: '3'
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📦 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests beautifulsoup4 lxml
+
+      - name: 🏨 Run scraper
+        run: |
+          if [ -n "${{ github.event.inputs.urls }}" ]; then
+            python -c "
+import sys
+sys.path.insert(0, '.')
+from tubayo_scraper_v2 import run_scraper
+urls = '${{ github.event.inputs.urls }}'.split(',')
+urls = [u.strip() for u in urls if u.strip()]
+run_scraper(urls=urls, delay=int('${{ github.event.inputs.delay }}'))
+"
+          else:
+            python tubayo_scraper_v2.py
+        timeout-minutes: 30
+
+      - name: 📊 Commit and push results
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add output/
+          git diff --quiet && git diff --staged --quiet || git commit -m "📊 Auto-scrape: $(date +'%Y-%m-%d %H:%M:%S')"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
