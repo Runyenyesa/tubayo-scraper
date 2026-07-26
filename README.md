@@ -210,7 +210,11 @@ tubayo-scraper/
 ```
 
 ---
+## Recent Updates
 
+- Improved the scraper workflow.
+- Enhanced data extraction reliability.
+- Updated project documentation.
 ## 👨‍💻 Built By
 
 **Runyenyesa Lincoln**  
