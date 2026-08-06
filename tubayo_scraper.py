@@ -124,7 +124,7 @@ def fetch_page_with_retry(url, timeout=15, max_retries=2):
         try:
             response = requests.get(url, headers=HEADERS, timeout=timeout)
             response.raise_for_status()
-            return BeautifulSoup(response.text, 'lxml'), None
+            return BeautifulSoup(response.text, 'html.parser'), None
 
         except requests.exceptions.Timeout:
             last_error = f"Timeout after {timeout}s"
