@@ -1,0 +1,150 @@
+{
+  "report_generated_at": "2026-08-18 06:23:00",
+  "scraping_session": {
+    "started_at": "2026-08-18 06:20:03",
+    "finished_at": "2026-08-18 06:23:00",
+    "duration_seconds": 176.78,
+    "duration_formatted": "0:02:56"
+  },
+  "statistics": {
+    "total_hotels": 16,
+    "successful": 4,
+    "failed": 12,
+    "success_rate_percent": 25.0
+  },
+  "field_coverage": {
+    "hotel_name": {
+      "found": 4,
+      "out_of": 4,
+      "coverage_percent": 100.0
+    },
+    "room_types": {
+      "found": 1,
+      "out_of": 4,
+      "coverage_percent": 25.0
+    },
+    "prices": {
+      "found": 0,
+      "out_of": 4,
+      "coverage_percent": 0.0
+    },
+    "check_in": {
+      "found": 0,
+      "out_of": 4,
+      "coverage_percent": 0.0
+    },
+    "check_out": {
+      "found": 0,
+      "out_of": 4,
+      "coverage_percent": 0.0
+    },
+    "amenities": {
+      "found": 2,
+      "out_of": 4,
+      "coverage_percent": 50.0
+    },
+    "location": {
+      "found": 1,
+      "out_of": 4,
+      "coverage_percent": 25.0
+    },
+    "phone": {
+      "found": 2,
+      "out_of": 4,
+      "coverage_percent": 50.0
+    },
+    "email": {
+      "found": 1,
+      "out_of": 4,
+      "coverage_percent": 25.0
+    },
+    "description": {
+      "found": 1,
+      "out_of": 4,
+      "coverage_percent": 25.0
+    }
+  },
+  "failures": {
+    "count": 12,
+    "by_reason": {
+      "Connection failed": 11,
+      "HTTP 403": 1
+    },
+    "failed_hotels": [
+      {
+        "url": "https://www.eminpasha.com",
+        "error_reason": "Connection failed"
+      },
+      {
+        "url": "https://www.fairwayhotel.co.ug",
+        "error_reason": "HTTP 403"
+      },
+      {
+        "url": "https://www.golfcoursehotel.co.ug",
+        "error_reason": "Connection failed"
+      },
+      {
+        "url": "https://www.kabira.co.ug",
+        "error_reason": "Connection failed"
+      },
+      {
+        "url": "https://www.humuraresorts.com",
+        "error_reason": "Connection failed"
+      },
+      {
+        "url": "https://www.cassialore.com",
+        "error_reason": "Connection failed"
+      },
+      {
+        "url": "https://www.laico-lakevictor.com",
+        "error_reason": "Connection failed"
+      },
+      {
+        "url": "https://www.jinjanileresort.com",
+        "error_reason": "Connection failed"
+      },
+      {
+        "url": "https://www.sourcenilehotel.com",
+        "error_reason": "Connection failed"
+      },
+      {
+        "url": "https://www.nkuringobwindi.com",
+        "error_reason": "Connection failed"
+      },
+      {
+        "url": "https://www.ihamba.com",
+        "error_reason": "Connection failed"
+      },
+      {
+        "url": "https://www.budongosafarilodge.com",
+        "error_reason": "Connection failed"
+      }
+    ]
+  },
+  "successful_hotels": [
+    {
+      "name": "Speke Hotel - Since 1920 | With The Best Luxury Hotel Facilities",
+      "url": "https://www.spekehotel.com",
+      "rooms_found": 8,
+      "amenities_found": 4
+    },
+    {
+      "name": "One moment, please...",
+      "url": "https://www.imperialhotels.co.ug",
+      "rooms_found": 0,
+      "amenities_found": 0
+    },
+    {
+      "name": "One moment, please...",
+      "url": "https://www.africanahotel.com",
+      "rooms_found": 0,
+      "amenities_found": 0
+    },
+    {
+      "name": "HugeDomains.com",
+      "url": "https://www.pearlofafrica.com",
+      "rooms_found": 0,
+      "amenities_found": 2
+    }
+  ]
+}
